@@ -10,8 +10,8 @@ module.exports = async function handler(req, res) {
   if (cors(req, res)) return;
 
   try {
-    const { licenseKey, userId, productId } = req.body || {};
-    const result = await validateLicense(licenseKey, userId, productId);
+    const { licenseKey, deviceId, productId } = req.body || {};
+    const result = await validateLicense(licenseKey, deviceId, productId);
     return res.status(result.valid ? 200 : 403).json(result);
   } catch (error) {
     console.error('Validate error:', error);

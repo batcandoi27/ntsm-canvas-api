@@ -14,10 +14,10 @@ module.exports = async function handler(req, res) {
   if (cors(req, res)) return;
 
   try {
-    const { licenseKey, userId, productId } = req.body || {};
+    const { licenseKey, deviceId, productId } = req.body || {};
 
     // Validate license first
-    const authResult = await validateLicense(licenseKey, userId, productId);
+    const authResult = await validateLicense(licenseKey, deviceId, productId);
     if (!authResult.valid) {
       return res.status(403).json({ success: false, message: authResult.message });
     }
