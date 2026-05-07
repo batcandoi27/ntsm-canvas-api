@@ -30,9 +30,23 @@ module.exports = async function handler(req, res) {
       return res.status(404).json({ success: false, message: 'Chưa có prompt cho sản phẩm này.' });
     }
 
+    const rawData = promptDoc.data();
+    const decodedPrompts = {};
+    for (const [key, value] of Object.entries(rawData)) {
+      if (key === 'updatedAt') {
+        decodedPrompts[key] = value;
+      } else {
+        try {
+          decodedPrompts[key] = Buffer.from(value, 'base64').toString('utf8');
+        } catch (e) {
+          decodedPrompts[key] = value; // fallback in case it's not base64
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      prompts: promptDoc.data()
+      prompts: decodedPrompts
     });
   } catch (error) {
     console.error('Prompts error:', error);

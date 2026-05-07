@@ -59,9 +59,9 @@ async function seed() {
   testKeys.forEach(k => console.log(`   🔑 ${k}`));
 
   // ============================================================
-  // 3. Tạo Prompts (trích từ chuyenword.jsx gốc)
+  // 3. Tạo Prompts
   // ============================================================
-  await db.collection('app_prompts').doc(productId).set({
+  const prompts = {
     originalMode: 'Hãy chuyển đổi toàn bộ nội dung trong hình ảnh này thành văn bản có cấu trúc.',
     cleanMode: 'LÀM SẠCH ĐỀ THI: Hãy chuyển đổi văn bản. Tuyệt đối bỏ qua và xóa bỏ các vết khoanh tròn đáp án, nét gạch xóa, nét viết tay của học sinh. Chỉ trích xuất phần chữ in gốc của đề bài.',
     similarMode: 'TẠO ĐỀ TƯƠNG TỰ: Hãy phân tích đề bài trong ảnh gốc và TẠO RA MỘT ĐỀ BÀI MỚI TƯƠNG TỰ (cùng cấu trúc, cùng dạng câu hỏi, cùng mức độ khó, nhưng THAY ĐỔI các số liệu, tên nhân vật, biến số hoặc bối cảnh trong câu hỏi sao cho khác biệt nhưng vẫn logic và giải được). LƯU Ý ĐẶC BIỆT: TUYỆT ĐỐI GIỮ NGUYÊN phần tiêu đề của đề thi (bao gồm Tên Trường, Sở, Phòng Giáo dục, Quận, Phường, Thành phố, Kỳ thi, Thời gian làm bài, Năm học...). KHÔNG được chế hay thay đổi các địa danh ở phần thông tin chung của đề thi.',
@@ -71,6 +71,16 @@ async function seed() {
     imageSvg: '4. Hình ảnh minh hoạ (TẠO BẰNG MÃ SVG): Tuyệt đối KHÔNG dùng thẻ [IMG_BBOX]. Tự động phân tích ảnh gốc và VIẾT MÃ NGUỒN CHUẨN SVG để vẽ lại biểu đồ/hình vẽ đó một cách chính xác. BẮT BUỘC bọc toàn bộ mã SVG (không dùng markdown code block) trong thẻ: `[SVG_IMAGE: <mã_svg>]`. LƯU Ý: Trong mã SVG, các thẻ chữ (<text>) TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA KÝ HIỆU $ (ví dụ viết C thay vì $C$, viết 3m thay vì $3$m).',
     imagePollinations: '4. Hình ảnh minh hoạ (ẢNH AI POLLINATIONS): Tuyệt đối KHÔNG dùng thẻ [IMG_BBOX]. Tự động phân tích ảnh gốc và sinh ra một đoạn Prompt mô tả biểu đồ/hình vẽ đó bằng TIẾNG ANH (dưới 10 từ). Xuất ra thẻ theo format: `[POLLINATIONS_PROMPT: your english prompt here]`.',
     imageAi: '4. Hình ảnh minh hoạ (ẢNH AI NANO BANANA): Tuyệt đối KHÔNG dùng thẻ [IMG_BBOX]. Tự động phân tích ảnh gốc và sinh ra một đoạn Prompt mô tả biểu đồ/hình vẽ đó bằng TIẾNG ANH (dưới 10 từ). Xuất ra thẻ theo format: `[AI_IMAGE_PROMPT: your english prompt here]`.',
+    formatMultipleChoiceFn: "if(!text)return '';let t=text;t=t.replace(/(\\s+)(\\*\\*|)(A|B|C|D)\\2[\\.\\)]\\s+/g,'\\n\\n$2$3.$2 ');t=t.replace(/(điểm|giác|hình|cạnh|đoạn|tại|đỉnh|qua|đường|tâm|là|tuyến|cung|góc)\\n\\n(\\*\\*|)(A|B|C|D)\\2\\.\\s+/gi,'$1 $2$3.$2 ');t=t.replace(/\\n{3,}/g,'\\n\\n');return t;"
+  };
+
+  const obfuscatedPrompts = {};
+  for (const [key, value] of Object.entries(prompts)) {
+    obfuscatedPrompts[key] = Buffer.from(value).toString('base64');
+  }
+
+  await db.collection('app_prompts').doc('chuyenword').set({
+    ...obfuscatedPrompts,
     updatedAt: now.toISOString()
   });
   console.log('✅ Prompts cho "chuyenword" đã tạo');
