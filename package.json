@@ -1,0 +1,13 @@
+{
+  "name": "ntsm-canvas-api",
+  "version": "1.0.0",
+  "description": "Backend API for NTSM Canvas Licensed Apps - License validation, prompts serving, export engine",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "jszip": "^3.10.1"
+  }
+}
