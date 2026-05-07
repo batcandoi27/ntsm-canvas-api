@@ -15,6 +15,6 @@ module.exports = async function handler(req, res) {
     return res.status(result.valid ? 200 : 403).json(result);
   } catch (error) {
     console.error('Validate error:', error);
-    return res.status(500).json({ valid: false, message: 'Lỗi máy chủ. Vui lòng thử lại.' });
+    return res.status(500).json({ valid: false, message: 'Lỗi máy chủ: ' + error.message });
   }
 };
