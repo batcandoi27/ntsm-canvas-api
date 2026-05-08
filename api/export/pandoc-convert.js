@@ -184,17 +184,19 @@ module.exports = async function handler(req, res) {
     const safeFilename = sanitizeFilename(filename);
     
     // Cấu hình CSS để Pandoc nhận diện: Font Times New Roman + Bảng có viền đơn black
+    // Reset margin P và Table để tránh bị cách dòng quá xa
     const styledHtml = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
       <style>
-        body { font-family: 'Times New Roman', serif; font-size: 14pt; }
-        table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        body { font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.2; }
+        p { margin: 2px 0; padding: 0; }
+        table { border-collapse: collapse; width: 100%; margin: 5px 0; }
         table, th, td { border: 1pt solid black; }
-        th, td { padding: 5px; vertical-align: top; }
-        p { margin: 5px 0; }
+        th, td { padding: 3px; vertical-align: top; }
+        .answer-line { margin-left: 20px; }
       </style>
     </head>
     <body>

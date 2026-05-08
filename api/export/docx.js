@@ -47,17 +47,22 @@ async function injectMediaToZip(zip, ooxml, ctx) {
 }
 
 module.exports = async function handler(req, res) {
+  // 0. Handle CORS
   if (cors(req, res)) return;
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method Not Allowed' });
   }
 
   try {
-    const { licenseKey, deviceId, markdownContent, images } = req.body;
+    const { licenseKey, deviceId, markdownContent, images, htmlContent } = req.body;
 
-    if (!licenseKey || !deviceId || !markdownContent) {
-      return res.status(400).json({ success: false, message: 'Invalid request: Missing required fields' });
+    if (!licenseKey || !deviceId || (!markdownContent && !htmlContent)) {
+      return res.status(400).json({ success: false, message: 'Yêu cầu không hợp lệ: Thiếu nội dung hoặc mã bản quyền.' });
     }
 
     // 1. Verify license and deviceId in Database
