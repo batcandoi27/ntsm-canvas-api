@@ -1,8 +1,10 @@
 const { cors } = require('../../lib/cors');
 const { getFirestore } = require('../../lib/firebase');
 const { execFileSync } = require('child_process');
-const { writeFileSync, unlinkSync, existsSync, readFileSync, createWriteStream, chmodSync, statSync } = require('fs');
-const { join } = require('path');
+const fs = require('fs');
+const path = require('path');
+const { writeFileSync, unlinkSync, existsSync, readFileSync, createWriteStream, chmodSync, statSync } = fs;
+const { join } = path;
 const { tmpdir } = require('os');
 const https = require('https');
 const tar = require('tar');
