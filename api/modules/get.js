@@ -95,18 +95,23 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { licenseKey, moduleId } = req.body;
+    const { licenseKey, deviceId, moduleId } = req.body;
 
-    if (!licenseKey || !moduleId || !MODULES[moduleId]) {
+    if (!licenseKey || !deviceId || !moduleId || !MODULES[moduleId]) {
       return res.status(400).json({ success: false, message: 'Invalid request' });
     }
 
-    // 1. Verify license in Database
+    // 1. Verify license and deviceId in Database
     const db = getFirestore();
     const licenseDoc = await db.collection('app_licenses').doc(licenseKey).get();
     
     if (!licenseDoc.exists || licenseDoc.data().status !== 'active') {
       return res.status(403).json({ success: false, message: 'License invalid or not active' });
+    }
+
+    const fingerprints = licenseDoc.data().fingerprints || [];
+    if (!fingerprints.includes(deviceId)) {
+      return res.status(403).json({ success: false, message: 'Thiết bị không hợp lệ hoặc chưa được cấp phép.' });
     }
 
     // 2. Encryption logic
@@ -117,7 +122,9 @@ module.exports = async function handler(req, res) {
     const iv = crypto.randomBytes(12); // GCM standard IV size
 
     // Derive key using PBKDF2 (100,000 iterations, SHA-256)
-    const key = crypto.pbkdf2Sync(licenseKey, salt, 100000, 32, 'sha256');
+    // Dùng kết hợp LicenseKey + DeviceId làm Master Password
+    const masterPassword = licenseKey + '_' + deviceId;
+    const key = crypto.pbkdf2Sync(masterPassword, salt, 100000, 32, 'sha256');
 
     // Encrypt using AES-256-GCM
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
