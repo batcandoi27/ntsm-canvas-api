@@ -232,7 +232,7 @@ module.exports = async function handler(req, res) {
     execFileSync(pandocPath, pandocArgs);
 
     // ============================================================
-    // BƯỚC 3: HẬU KỲ XML - TRẢ LẠI DẤU $ CHO MATHTYPE
+    // BƯỚC 3: HẬU KỲ XML - TRẢ LẠI DẤU $ & ÉP VIỀN BẢNG ĐẬM
     // ============================================================
     const JSZip = require('jszip');
     const docxData = readFileSync(outputPath);
@@ -240,14 +240,44 @@ module.exports = async function handler(req, res) {
     const docXmlPath = 'word/document.xml';
     let docXml = await zip.file(docXmlPath).async('string');
 
+    // 3.1 Trả lại dấu $ cho MathType
     if (disableMath) {
       const MATH_MARKER = 'NTSM_DOLLAR_MARKER';
-      console.log('[Pandoc-Convert] Swapping markers back to $ for MathType...');
-      // Thay ngược lại marker thành dấu $ trong file Word cuối cùng
+      console.log('[Pandoc-Convert] Swapping markers back to $...');
       docXml = docXml.replace(new RegExp(MATH_MARKER, 'g'), '$');
     }
 
-    // KHÔNG xóa <w:p> nữa để tránh hỏng file, chỉ xử lý Text
+    // 3.2 PHẪU THUẬT XML: Ép viền bảng đậm (sz="18" ~ 2.25pt) và Căn giữa
+    console.log('[Pandoc-Convert] Injecting thick borders and centering to XML...');
+    
+    // Ép độ dày viền cho tất cả các loại viền (top, left, bottom, right, insideH, insideV)
+    docXml = docXml.replace(/<w:tblBorders>(.*?)<\/w:tblBorders>/gs, (match, content) => {
+      // Thay thế sz="..." thành sz="18" cho tất cả các tag viền bên trong
+      let fixedContent = content.replace(/(<w:(?:top|left|bottom|right|insideH|insideV)[^>]+?w:sz=")\d+(")/g, '$118$2');
+      // Nếu tag chưa có sz, chèn thêm sz="18"
+      fixedContent = fixedContent.replace(/(<w:(?:top|left|bottom|right|insideH|insideV))((?:(?![ ]w:sz=)[^>])+)(\/>)/g, '$1 w:sz="18" $2$3');
+      return `<w:tblBorders>${fixedContent}</w:tblBorders>`;
+    });
+
+    // Ép căn giữa cho bảng (Table Justification)
+    docXml = docXml.replace(/<w:tblPr>(.*?)<\/w:tblPr>/gs, (match, content) => {
+      if (!content.includes('<w:jc')) {
+        return `<w:tblPr>${content}<w:jc w:val="center"/></w:tblPr>`;
+      }
+      return match.replace(/<w:jc w:val="[^"]+"/, '<w:jc w:val="center"');
+    });
+
+    // Ép căn giữa cho nội dung trong ô (Cell Paragraph Justification)
+    // Tìm các đoạn văn <w:p> nằm trong ô <w:tc>
+    docXml = docXml.replace(/<w:tc>(.*?)<\/w:tc>/gs, (match, cellContent) => {
+      return `<w:tc>${cellContent.replace(/<w:pPr>(.*?)<\/w:pPr>/gs, (m, pPrContent) => {
+        if (!pPrContent.includes('<w:jc')) {
+          return `<w:pPr>${pPrContent}<w:jc w:val="center"/></w:pPr>`;
+        }
+        return m.replace(/<w:jc w:val="[^"]+"/, '<w:jc w:val="center"');
+      })}</w:tc>`;
+    });
+
     zip.file(docXmlPath, docXml);
     const finalBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
