@@ -184,9 +184,23 @@ module.exports = async function handler(req, res) {
     await ensurePandoc();
 
     const safeFilename = sanitizeFilename(filename);
+    const { disableMath } = req.body || {};
+
+    // 1. LÀM SẠCH "RÁC" MARKDOWN/HTML TRƯỚC KHI CONVERT
+    let cleanHtml = html;
+    // Xóa các paragraph chỉ chứa khoảng trắng hoặc &nbsp;
+    cleanHtml = cleanHtml.replace(/<p>\s*(&nbsp;)*\s*<\/p>/gi, '');
+    // Xóa các dòng trống thừa (3 dòng thành 1)
+    cleanHtml = cleanHtml.replace(/(\r\n|\n|\r){3,}/g, '\n\n');
     
+    // 2. MẸO ĐÁNH TRÁO DẤU $ CHO MATHTYPE
+    const MATH_MARKER = 'NTSM_MATH_DOLLAR';
+    if (disableMath) {
+      // Thay $ thành chuỗi marker để Pandoc không nhận ra Math
+      cleanHtml = cleanHtml.replace(/\$/g, MATH_MARKER);
+    }
+
     // Cấu hình CSS để Pandoc nhận diện: Font Times New Roman + Bảng có viền đơn black
-    // Reset margin P và Table cực mạnh để tránh bị cách dòng
     const styledHtml = `
     <!DOCTYPE html>
     <html>
@@ -198,30 +212,19 @@ module.exports = async function handler(req, res) {
         table { border-collapse: collapse; width: 100%; margin: 0 !important; }
         table, th, td { border: 1pt solid black; }
         th, td { padding: 2px; vertical-align: top; }
-        .answer-line { margin-left: 20px; }
       </style>
     </head>
     <body>
-      ${html}
+      ${cleanHtml}
     </body>
     </html>
     `;
 
-    // Xử lý chế độ disableMath (MathType Pandoc)
-    const { disableMath } = req.body || {};
-    
-    let finalHtml = styledHtml;
-    if (disableMath) {
-      // Escape dấu $ để Pandoc không nhận ra là công thức
-      finalHtml = finalHtml.replace(/\$/g, '\\$');
-    }
-
     // Ghi file HTML tạm
-    writeFileSync(inputPath, finalHtml);
+    writeFileSync(inputPath, styledHtml);
 
     // KEY: Dùng file reference.docx để ép Font và Style
     const referencePath = path.resolve('reference.docx');
-    
     const fromFormat = 'html+tex_math_dollars+tex_math_single_backslash';
 
     const pandocArgs = [
@@ -233,36 +236,34 @@ module.exports = async function handler(req, res) {
     ];
 
     if (fs.existsSync(referencePath)) {
-      console.log('[Pandoc-Convert] Using reference-doc for styling...');
       pandocArgs.push('--reference-doc', referencePath);
     }
 
     execFileSync(pandocPath, pandocArgs);
 
     // ============================================================
-    // BƯỚC 3: HẬU KỲ XML - XÓA DÒNG TRỐNG THỪA
+    // BƯỚC 3: HẬU KỲ XML - TRẢ LẠI DẤU $ CHO MATHTYPE
     // ============================================================
-    console.log('[Pandoc-Convert] Post-processing XML to remove empty lines...');
     const JSZip = require('jszip');
     const docxData = readFileSync(outputPath);
     const zip = await JSZip.loadAsync(docxData);
     const docXmlPath = 'word/document.xml';
     let docXml = await zip.file(docXmlPath).async('string');
 
-    // Regex xóa các thẻ paragraph trống mà Pandoc hay tạo ra
-    // Thường là <w:p><w:pPr>...</w:pPr><w:r><w:t/></w:r></w:p> hoặc <w:p/>
-    // Chúng ta xóa các paragraph chỉ chứa text trống hoặc không chứa text
-    docXml = docXml.replace(/<w:p(?: [^>]*)?>(?:<w:pPr>.*?<\/w:pPr>)?(?:<w:r(?: [^>]*)?><w:t\/>\s*<\/w:r>)?<\/w:p>/g, '');
-    // Xóa thêm các khoảng trắng dư thừa giữa các tag
-    docXml = docXml.replace(/<\/w:p>\s*<w:p>/g, '</w:p><w:p>');
+    if (disableMath) {
+      console.log('[Pandoc-Convert] Swapping markers back to $ for MathType...');
+      // Thay ngược lại marker thành dấu $
+      docXml = docXml.replace(new RegExp(MATH_MARKER, 'g'), '$');
+    }
 
+    // KHÔNG xóa <w:p> nữa để tránh hỏng file, chỉ xử lý Text
     zip.file(docXmlPath, docXml);
     const finalBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
     console.log('[Pandoc-Convert] Success.');
 
     // ============================================================
-    // BƯỚC 4: Trả file DOCX đã qua xử lý
+    // BƯỚC 4: Trả file DOCX đã qua xử lý an toàn
     // ============================================================
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
