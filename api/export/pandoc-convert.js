@@ -196,8 +196,8 @@ module.exports = async function handler(req, res) {
         body { font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.1; }
         p { margin: 0 !important; padding: 0 !important; line-height: 1.1; }
         table { border-collapse: collapse; width: 100%; margin: 10px 0 !important; }
-        table, th, td { border: 1.5pt solid black; }
-        th, td { padding: 4px; vertical-align: middle; text-align: center; }
+        table, th, td { border: 2.25pt solid black; }
+        th, td { padding: 6px; vertical-align: middle; text-align: center; }
       </style>
     </head>
     <body>
