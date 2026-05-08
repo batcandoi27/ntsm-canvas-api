@@ -183,8 +183,28 @@ module.exports = async function handler(req, res) {
 
     const safeFilename = sanitizeFilename(filename);
     
+    // Cấu hình CSS để Pandoc nhận diện: Font Times New Roman + Bảng có viền đơn black
+    const styledHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: 'Times New Roman', serif; font-size: 14pt; }
+        table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        table, th, td { border: 1pt solid black; }
+        th, td { padding: 5px; vertical-align: top; }
+        p { margin: 5px 0; }
+      </style>
+    </head>
+    <body>
+      ${html}
+    </body>
+    </html>
+    `;
+
     // Ghi file HTML tạm
-    writeFileSync(inputPath, html);
+    writeFileSync(inputPath, styledHtml);
 
     console.log('[Pandoc-Convert] Executing Pandoc with LaTeX Math support...');
     
@@ -193,6 +213,7 @@ module.exports = async function handler(req, res) {
         inputPath,
         '-f', 'html+tex_math_dollars+tex_math_single_backslash', 
         '-t', 'docx',
+        '--standalone',
         '-o', outputPath
     ]);
 
