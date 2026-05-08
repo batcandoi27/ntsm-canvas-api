@@ -211,7 +211,11 @@ module.exports = async function handler(req, res) {
 
     // KEY: Dùng file reference.docx để ép Font và Style
     const referencePath = path.resolve('reference.docx');
-    const fromFormat = 'html+tex_math_dollars+tex_math_single_backslash';
+    
+    // Xử lý Format: Nếu disableMath, dùng flag trừ (-) để tắt toán học
+    const fromFormat = disableMath 
+      ? 'html-tex_math_dollars-tex_math_single_backslash-tex_math_double_backslash' 
+      : 'html+tex_math_dollars+tex_math_single_backslash';
 
     const pandocArgs = [
         inputPath,
