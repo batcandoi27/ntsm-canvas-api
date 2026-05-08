@@ -25,10 +25,17 @@ module.exports = async function handler(req, res) {
         query = query.where('productId', '==', productId);
       }
       
-      const snapshot = await query.orderBy('createdAt', 'desc').get();
+      const snapshot = await query.get();
       const licenses = [];
       snapshot.forEach(doc => {
         licenses.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Sort in memory to avoid Firestore composite index requirement
+      licenses.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
       });
 
       return res.status(200).json({ success: true, licenses });
