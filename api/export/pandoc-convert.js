@@ -1,0 +1,224 @@
+const { cors } = require('../../lib/cors');
+const { getFirestore } = require('../../lib/firebase');
+const { execFileSync } = require('child_process');
+const { writeFileSync, unlinkSync, existsSync, readFileSync, createWriteStream, chmodSync, statSync } = require('fs');
+const { join } = require('path');
+const { tmpdir } = require('os');
+const https = require('https');
+const tar = require('tar');
+
+// ===================== PANDOC BINARY SETUP =====================
+const PANDOC_VERSION = '3.1.11.1'; 
+const PANDOC_URL = `https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz`;
+const pandocPath = join(tmpdir(), 'pandoc');
+
+const downloadFile = (url, dest) => {
+    return new Promise((resolve, reject) => {
+        const request = https.get(url, (response) => {
+            if (response.statusCode === 301 || response.statusCode === 302) {
+                if (response.headers.location) {
+                    downloadFile(response.headers.location, dest).then(resolve).catch(reject);
+                    return;
+                }
+            }
+            if (response.statusCode !== 200) {
+                reject(new Error(`Download failed with status: ${response.statusCode}`));
+                return;
+            }
+            const file = createWriteStream(dest);
+            response.pipe(file);
+            file.on('finish', () => { file.close(); resolve(); });
+            file.on('error', (err) => { try { unlinkSync(dest); } catch(e) {} reject(err); });
+        });
+        request.on('error', (err) => { try { unlinkSync(dest); } catch(e) {} reject(err); });
+    });
+};
+
+const ensurePandoc = async () => {
+    if (existsSync(pandocPath)) {
+        try {
+            const stats = statSync(pandocPath);
+            if (stats.size > 0) return; 
+        } catch (e) {}
+    }
+
+    console.log(`[Pandoc] Installing version ${PANDOC_VERSION}...`);
+    const tarPath = join(tmpdir(), 'pandoc.tar.gz');
+    
+    try {
+        await downloadFile(PANDOC_URL, tarPath);
+        await tar.x({ file: tarPath, cwd: tmpdir(), strip: 2, filter: (path) => path.endsWith('/bin/pandoc') });
+        if (existsSync(pandocPath)) {
+            chmodSync(pandocPath, '755');
+        } else {
+            throw new Error("Pandoc binary missing after extraction.");
+        }
+    } catch (e) {
+        console.error("[Pandoc] Install Error:", e);
+        throw e;
+    } finally {
+        if (existsSync(tarPath)) { try { unlinkSync(tarPath); } catch(e) {} }
+    }
+};
+
+const sanitizeFilename = (name) => {
+    if (!name) return 'document.docx';
+    let str = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    str = str.replace(/đ/g, 'd').replace(/Đ/g, 'D');
+    str = str.replace(/[^a-zA-Z0-9\.]/g, '_');
+    str = str.replace(/_+/g, '_');
+    if (!str.toLowerCase().endsWith('.docx')) str += '.docx';
+    return str || 'document.docx';
+};
+
+// ===================== API HANDLER =====================
+
+/**
+ * POST /api/export/pandoc-convert
+ * 
+ * Chuyển đổi HTML → DOCX bằng Pandoc binary thực sự
+ * (Hỗ trợ $...$ LaTeX → Equation trong Word)
+ * 
+ * Có kiểm tra bảo mật license + deviceId trước khi cho phép xuất.
+ * 
+ * Body: {
+ *   licenseKey: string,
+ *   deviceId: string,
+ *   productId?: string,
+ *   html: string,
+ *   filename?: string
+ * }
+ */
+module.exports = async function handler(req, res) {
+  if (cors(req, res)) return;
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, message: 'Method Not Allowed' });
+  }
+
+  const timestamp = Date.now();
+  const inputPath = join(tmpdir(), `input_${timestamp}.html`);
+  const outputPath = join(tmpdir(), `output_${timestamp}.docx`);
+
+  try {
+    const { licenseKey, deviceId, productId, html, filename } = req.body || {};
+
+    // ============================================================
+    // BƯỚC 1: Kiểm tra bảo mật — License + Device Fingerprint
+    // ============================================================
+    if (!licenseKey || !deviceId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Thiếu thông tin xác thực (licenseKey hoặc deviceId).' 
+      });
+    }
+
+    if (!html || html.trim().length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Thiếu nội dung HTML để chuyển đổi.' 
+      });
+    }
+
+    const db = getFirestore();
+
+    // Tìm license theo key hoặc email
+    let licenseDoc = null;
+    let licenseRef = db.collection('app_licenses').doc(licenseKey);
+    licenseDoc = await licenseRef.get();
+
+    if (!licenseDoc.exists) {
+      const emailQuery = await db.collection('app_licenses')
+        .where('email', '==', licenseKey.toLowerCase())
+        .limit(1)
+        .get();
+      
+      if (!emailQuery.empty) {
+        licenseDoc = emailQuery.docs[0];
+      } else {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Mã kích hoạt hoặc Email không tồn tại.' 
+        });
+      }
+    }
+
+    const data = licenseDoc.data();
+
+    if (data.status === 'revoked' || data.status === 'expired') {
+      return res.status(403).json({ 
+        success: false, 
+        message: `Mã kích hoạt đã ${data.status === 'revoked' ? 'bị thu hồi' : 'hết hạn'}.` 
+      });
+    }
+
+    if (data.expiresAt) {
+      const expiresAt = data.expiresAt.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
+      if (expiresAt < new Date()) {
+        return res.status(403).json({ success: false, message: 'Mã kích hoạt đã hết hạn.' });
+      }
+    }
+
+    const fingerprints = data.fingerprints || [];
+    if (data.deviceId && fingerprints.length === 0) {
+      fingerprints.push(data.deviceId);
+    }
+    
+    if (!fingerprints.includes(deviceId)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Thiết bị không hợp lệ hoặc chưa được cấp phép.' 
+      });
+    }
+
+    if (productId && data.productId && data.productId !== productId) {
+      return res.status(403).json({ success: false, message: 'Mã kích hoạt không đúng sản phẩm.' });
+    }
+
+    // ============================================================
+    // BƯỚC 2: Cài đặt Pandoc (nếu chưa có) & Chuyển đổi
+    // ============================================================
+    console.log(`[Pandoc-Convert] Request from license: ${licenseKey.substring(0, 8)}...`);
+    await ensurePandoc();
+
+    const safeFilename = sanitizeFilename(filename);
+    
+    // Ghi file HTML tạm
+    writeFileSync(inputPath, html);
+
+    console.log('[Pandoc-Convert] Executing Pandoc with LaTeX Math support...');
+    
+    // KEY: html+tex_math_dollars hỗ trợ $...$ → Equation trong Word
+    execFileSync(pandocPath, [
+        inputPath,
+        '-f', 'html+tex_math_dollars+tex_math_single_backslash', 
+        '-t', 'docx',
+        '-o', outputPath
+    ]);
+
+    console.log('[Pandoc-Convert] Success.');
+
+    // ============================================================
+    // BƯỚC 3: Trả file DOCX
+    // ============================================================
+    const fileBuffer = readFileSync(outputPath);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    
+    return res.send(fileBuffer);
+
+  } catch (error) {
+    console.error('[Pandoc-Convert] Fatal Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Lỗi máy chủ khi chuyển đổi: ' + error.message 
+    });
+  } finally {
+    // Dọn dẹp file tạm
+    try {
+      if (existsSync(inputPath)) unlinkSync(inputPath);
+      if (existsSync(outputPath)) unlinkSync(outputPath);
+    } catch (e) {}
+  }
+};
