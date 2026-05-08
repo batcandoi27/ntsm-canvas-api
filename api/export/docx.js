@@ -78,17 +78,14 @@ module.exports = async function handler(req, res) {
       return res.status(403).json({ success: false, message: 'Thiết bị không hợp lệ hoặc chưa được cấp phép.' });
     }
 
-    // 2. Load empty.docx template
-    // Vercel might not bundle the file if we don't handle it, 
-    // but assuming it is uploaded alongside the API in a known location.
-    // For local dev, we will read it from the user's workspace
-    const templatePath = path.resolve('c:/NTSMPRO/05 linh linh thang 5/empty.docx');
+    // 2. Load reference.docx template (Dùng đường dẫn tương đối để chạy được trên Vercel/Hosting)
+    const templatePath = path.join(process.cwd(), 'reference.docx');
     let templateData;
     if (fs.existsSync(templatePath)) {
       templateData = fs.readFileSync(templatePath);
     } else {
-      // Fallback for Vercel if needed
-      templateData = fs.readFileSync(path.join(__dirname, 'empty.docx'));
+      // Fallback
+      templateData = fs.readFileSync(path.join(__dirname, 'reference.docx'));
     }
 
     const zip = await JSZip.loadAsync(templateData);
@@ -96,8 +93,8 @@ module.exports = async function handler(req, res) {
     // 3. Process Images: we need to replace [IMG_...] or [HÌNH ẢNH...] in markdown with base64 before parsing
     let processedMarkdown = markdownContent;
     if (images) {
-      // Regex hỗ trợ cả [IMG_...] và [HÌNH ẢNH MINH HOẠ: IMG_...]
-      const imgRegex = /\[(?:HÌNH [ẢA]NH MINH H[OỌ][ẠA]:\s*)?(IMG_[^\]]+)\]/gi;
+      // Regex hỗ trợ cả [IMG_...], [IMG_BBOX: ...] và [HÌNH ẢNH MINH HOẠ: IMG_...]
+      const imgRegex = /\[(?:HÌNH [ẢA]NH MINH H[OỌ][ẠA]:\s*)?(IMG_(?:BBOX[:_])?[\d,\s]+|IMG_[^\]]+)\]/gi;
       processedMarkdown = processedMarkdown.replace(imgRegex, (match, imageId) => {
         // Đảm bảo imageId có prefix IMG_ nếu user chỉ ghi số
         const fullId = imageId.startsWith('IMG_') ? imageId : `IMG_${imageId}`;
