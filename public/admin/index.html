@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AdminCP - NTSM License Manager</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Use standard Lucide icons script for browser -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8fafc; }
+    .lucide { width: 1.25rem; height: 1.25rem; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const App = () => {
+      const [password, setPassword] = useState(localStorage.getItem('admin_pwd') || '');
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+      
+      const [products, setProducts] = useState(['chuyenword']);
+      const [selectedProduct, setSelectedProduct] = useState('all');
+      const [licenses, setLicenses] = useState([]);
+      
+      // Form fields
+      const [newCount, setNewCount] = useState(1);
+      const [newPrefix, setNewPrefix] = useState('NTSM');
+      const [newExpiresAt, setNewExpiresAt] = useState('');
+
+      useEffect(() => {
+        if (password) {
+          checkAuth();
+        }
+      }, []);
+
+      useEffect(() => {
+        // Redraw lucide icons after render
+        setTimeout(() => {
+          if (window.lucide) window.lucide.createIcons();
+        }, 100);
+      });
+
+      const checkAuth = async () => {
+        setLoading(true);
+        try {
+          const res = await fetch('/api/admin/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          });
+          const data = await res.json();
+          if (data.success) {
+            setIsAuthenticated(true);
+            localStorage.setItem('admin_pwd', password);
+            fetchProducts();
+            fetchLicenses();
+          } else {
+            setError(data.message || 'Mật khẩu sai');
+            localStorage.removeItem('admin_pwd');
+            setIsAuthenticated(false);
+          }
+        } catch (e) {
+          setError('Lỗi kết nối server');
+        }
+        setLoading(false);
+      };
+
+      const fetchProducts = async () => {
+        try {
+          const res = await fetch('/api/admin/products', {
+            headers: { 'x-admin-password': password }
+          });
+          const data = await res.json();
+          if (data.success && data.products) {
+            setProducts(data.products);
+          }
+        } catch (e) {}
+      };
+
+      const fetchLicenses = async (prod = selectedProduct) => {
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/admin/licenses?productId=${prod}`, {
+            headers: { 'x-admin-password': password }
+          });
+          const data = await res.json();
+          if (data.success) {
+            setLicenses(data.licenses);
+          } else if (res.status === 401) {
+            setIsAuthenticated(false);
+          }
+        } catch (e) {}
+        setLoading(false);
+      };
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        checkAuth();
+      };
+
+      const createLicenses = async (e) => {
+        e.preventDefault();
+        if (!confirm(`Tạo ${newCount} mã cho App ${selectedProduct === 'all' ? products[0] : selectedProduct}?`)) return;
+        
+        setLoading(true);
+        try {
+          const res = await fetch('/api/admin/licenses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+            body: JSON.stringify({
+              count: newCount,
+              prefix: newPrefix,
+              productId: selectedProduct === 'all' ? products[0] : selectedProduct,
+              expiresAt: newExpiresAt || null
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            fetchLicenses();
+            alert(`Tạo thành công ${data.generated.length} mã!`);
+          } else {
+            alert('Lỗi: ' + data.message);
+          }
+        } catch (e) {
+          alert('Lỗi kết nối');
+        }
+        setLoading(false);
+      };
+
+      const handleAction = async (id, action) => {
+        const msg = action === 'reset_device' ? 'Xóa máy tính đã liên kết (Reset thiết bị)?'
+                  : action === 'revoke' ? 'Khóa mã này?'
+                  : action === 'activate' ? 'Mở khóa mã này?'
+                  : 'Xóa vĩnh viễn mã này?';
+        if (!confirm(msg)) return;
+
+        setLoading(true);
+        try {
+          if (action === 'delete') {
+            await fetch(`/api/admin/licenses?id=${id}`, {
+              method: 'DELETE',
+              headers: { 'x-admin-password': password }
+            });
+          } else {
+            await fetch('/api/admin/licenses', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+              body: JSON.stringify({ id, action })
+            });
+          }
+          fetchLicenses();
+        } catch (e) {
+          alert('Lỗi thao tác');
+        }
+        setLoading(false);
+      };
+
+      if (!isAuthenticated) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-900">
+            <div className="bg-slate-800 p-8 rounded-2xl shadow-xl w-96 border border-slate-700">
+              <div className="flex justify-center mb-6">
+                <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center">
+                  <i data-lucide="shield-check" className="text-blue-400 w-8 h-8"></i>
+                </div>
+              </div>
+              <h1 className="text-2xl font-bold text-center text-white mb-2">Quản Trị Hệ Thống</h1>
+              <p className="text-slate-400 text-center mb-6 text-sm">Vui lòng nhập mật khẩu cấp quản trị</p>
+              
+              <form onSubmit={handleLogin}>
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Mật khẩu..."
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
+                  autoFocus
+                />
+                {error && <p className="text-red-400 text-sm mb-4 text-center">{error}</p>}
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl flex justify-center items-center gap-2 transition"
+                >
+                  {loading ? <i data-lucide="loader-2" className="animate-spin"></i> : <i data-lucide="log-in"></i>}
+                  Đăng nhập
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* Header */}
+          <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                <i data-lucide="shield" className="text-white"></i>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-800">Quản lý Bản quyền App</h1>
+                <p className="text-xs text-slate-500">NTSM License Manager Dashboard</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <select 
+                value={selectedProduct} 
+                onChange={e => { setSelectedProduct(e.target.value); fetchLicenses(e.target.value); }}
+                className="px-4 py-2 bg-slate-100 border border-slate-300 rounded-lg text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">Tất cả ứng dụng</option>
+                {products.map(p => <option key={p} value={p}>Ứng dụng: {p}</option>)}
+              </select>
+              <button 
+                onClick={() => { localStorage.removeItem('admin_pwd'); setIsAuthenticated(false); }}
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                title="Đăng xuất"
+              >
+                <i data-lucide="log-out"></i>
+              </button>
+            </div>
+          </header>
+
+          <main className="flex-1 p-6 max-w-[1600px] mx-auto w-full flex flex-col lg:flex-row gap-6">
+            
+            {/* Sidebar / Tools */}
+            <div className="w-full lg:w-80 flex flex-col gap-6">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                  <i data-lucide="plus-circle" className="text-emerald-500"></i>
+                  Tạo mã mới
+                </h2>
+                <form onSubmit={createLicenses} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Ứng dụng</label>
+                    <select 
+                      disabled={selectedProduct !== 'all'}
+                      value={selectedProduct === 'all' ? products[0] : selectedProduct} 
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                    >
+                      {products.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Số lượng</label>
+                      <input type="number" min="1" max="100" value={newCount} onChange={e=>setNewCount(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Tiền tố</label>
+                      <input type="text" value={newPrefix} onChange={e=>setNewPrefix(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Ngày hết hạn (Để trống = Vĩnh viễn)</label>
+                    <input type="date" value={newExpiresAt} onChange={e=>setNewExpiresAt(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500" />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg text-sm transition">
+                    Tạo {newCount} mã
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-slate-800 p-5 rounded-2xl shadow-sm text-white">
+                <h3 className="font-bold mb-2 flex items-center gap-2"><i data-lucide="bar-chart-2"></i> Thống kê nhanh</h3>
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div className="bg-slate-700 p-3 rounded-xl">
+                    <p className="text-xs text-slate-400">Tổng số mã</p>
+                    <p className="text-2xl font-black">{licenses.length}</p>
+                  </div>
+                  <div className="bg-emerald-500/20 p-3 rounded-xl border border-emerald-500/30">
+                    <p className="text-xs text-emerald-300">Đã kích hoạt</p>
+                    <p className="text-2xl font-black text-emerald-400">{licenses.filter(l => l.status === 'active').length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Table */}
+            <div className="flex-1 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 className="font-bold text-slate-800">Danh sách Mã Bản Quyền</h2>
+                <button onClick={() => fetchLicenses()} className="p-2 bg-white border border-slate-200 rounded hover:bg-slate-50 text-slate-600 text-xs font-semibold flex items-center gap-1">
+                  <i data-lucide="refresh-cw" className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}></i> Làm mới
+                </button>
+              </div>
+              <div className="overflow-x-auto flex-1">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-100/50 text-slate-500 text-xs uppercase font-semibold">
+                    <tr>
+                      <th className="px-4 py-3">Mã Kích Hoạt / App</th>
+                      <th className="px-4 py-3">Trạng Thái</th>
+                      <th className="px-4 py-3">Email / Đăng nhập</th>
+                      <th className="px-4 py-3">Thiết Bị (Fingerprint)</th>
+                      <th className="px-4 py-3">Thời gian</th>
+                      <th className="px-4 py-3 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {licenses.length === 0 ? (
+                      <tr><td colSpan="6" className="text-center py-10 text-slate-400">Không có dữ liệu</td></tr>
+                    ) : licenses.map(l => {
+                      const isExpired = l.expiresAt && new Date(l.expiresAt) < new Date();
+                      const statusColor = l.status === 'active' ? 'bg-emerald-100 text-emerald-700' 
+                                        : l.status === 'revoked' ? 'bg-red-100 text-red-700'
+                                        : isExpired ? 'bg-orange-100 text-orange-700'
+                                        : 'bg-slate-100 text-slate-600';
+                      const statusText = isExpired ? 'HẾT HẠN' : l.status === 'active' ? 'ĐANG DÙNG' : l.status === 'revoked' ? 'BỊ KHÓA' : 'CHƯA KÍCH HOẠT';
+
+                      return (
+                        <tr key={l.id} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-3">
+                            <div className="font-mono font-bold text-indigo-700 text-sm select-all">{l.id}</div>
+                            <div className="text-xs text-slate-400 mt-0.5 px-1.5 py-0.5 bg-slate-100 inline-block rounded">{l.productId}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded text-[10px] font-bold ${statusColor}`}>{statusText}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-700">{l.email || <span className="text-slate-300 italic">Chưa lk email</span>}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{l.loginCount || 0} lần mở app</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded">{(l.fingerprints || []).length} / 1 máy</span>
+                              {(l.fingerprints || []).length > 0 && (
+                                <button onClick={() => handleAction(l.id, 'reset_device')} title="Xóa dữ liệu máy tính này để khách dùng máy khác" className="text-blue-500 hover:text-blue-700 bg-blue-50 p-1 rounded">
+                                  <i data-lucide="monitor-off" className="w-3.5 h-3.5"></i>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            <div className="text-slate-500"><span className="font-medium">Kích hoạt:</span> {l.activatedAt ? new Date(l.activatedAt).toLocaleDateString('vi-VN') : '-'}</div>
+                            <div className={isExpired ? 'text-red-500 font-semibold' : 'text-slate-500'}><span className="font-medium text-slate-500">Hết hạn:</span> {l.expiresAt ? new Date(l.expiresAt).toLocaleDateString('vi-VN') : 'Vĩnh viễn'}</div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-1">
+                              {l.status !== 'revoked' ? (
+                                <button onClick={() => handleAction(l.id, 'revoke')} title="Khóa mã" className="p-1.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded">
+                                  <i data-lucide="lock" className="w-4 h-4"></i>
+                                </button>
+                              ) : (
+                                <button onClick={() => handleAction(l.id, 'activate')} title="Mở khóa" className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded">
+                                  <i data-lucide="unlock" className="w-4 h-4"></i>
+                                </button>
+                              )}
+                              <button onClick={() => handleAction(l.id, 'delete')} title="Xóa vĩnh viễn" className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded">
+                                <i data-lucide="trash-2" className="w-4 h-4"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
