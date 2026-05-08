@@ -193,9 +193,9 @@ module.exports = async function handler(req, res) {
     <head>
       <meta charset="utf-8">
       <style>
-        body { font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.2; }
-        p { margin: 0 !important; padding: 0 !important; line-height: 1.2; }
-        table { border-collapse: collapse; width: 100%; margin: 10px 0; border: 1.5pt solid black; }
+        body { font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.1; }
+        p { margin: 0 !important; padding: 0 !important; line-height: 1.1; }
+        table { border-collapse: collapse; width: 100%; margin: 10px 0 !important; }
         table, th, td { border: 1.5pt solid black; }
         th, td { padding: 4px; vertical-align: middle; text-align: center; }
       </style>
