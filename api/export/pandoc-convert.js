@@ -186,18 +186,18 @@ module.exports = async function handler(req, res) {
     const safeFilename = sanitizeFilename(filename);
     
     // Cấu hình CSS để Pandoc nhận diện: Font Times New Roman + Bảng có viền đơn black
-    // Reset margin P và Table để tránh bị cách dòng quá xa
+    // Reset margin P và Table cực mạnh để tránh bị cách dòng
     const styledHtml = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
       <style>
-        body { font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.2; }
-        p { margin: 2px 0; padding: 0; }
-        table { border-collapse: collapse; width: 100%; margin: 5px 0; }
+        body { font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.1; }
+        p { margin: 0 !important; padding: 0 !important; line-height: 1.1; }
+        table { border-collapse: collapse; width: 100%; margin: 0 !important; }
         table, th, td { border: 1pt solid black; }
-        th, td { padding: 3px; vertical-align: top; }
+        th, td { padding: 2px; vertical-align: top; }
         .answer-line { margin-left: 20px; }
       </style>
     </head>
@@ -212,9 +212,16 @@ module.exports = async function handler(req, res) {
 
     // KEY: Dùng file reference.docx để ép Font và Style
     const referencePath = path.resolve('reference.docx');
+    
+    // Xử lý chế độ disableMath (MathType Pandoc)
+    const { disableMath } = req.body || {};
+    const fromFormat = disableMath 
+      ? 'html-tex_math_dollars' // Tắt parse math
+      : 'html+tex_math_dollars+tex_math_single_backslash';
+
     const pandocArgs = [
         inputPath,
-        '-f', 'html+tex_math_dollars+tex_math_single_backslash', 
+        '-f', fromFormat, 
         '-t', 'docx',
         '--standalone',
         '-o', outputPath
