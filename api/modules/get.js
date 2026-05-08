@@ -128,9 +128,11 @@ module.exports = async function handler(req, res) {
 
     // Encrypt using AES-256-GCM
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-    let encrypted = cipher.update(code, 'utf8', 'base64');
-    encrypted += cipher.final('base64');
-    const authTag = cipher.getAuthTag().toString('base64');
+    const encryptedBytes = Buffer.concat([cipher.update(code, 'utf8'), cipher.final()]);
+    const authTagBytes = cipher.getAuthTag();
+    
+    // Web Crypto API requires authTag to be appended to the ciphertext
+    const finalPayload = Buffer.concat([encryptedBytes, authTagBytes]).toString('base64');
 
     // Checksum of the original code for integrity verification
     const checksum = crypto.createHash('sha256').update(code).digest('hex');
@@ -141,8 +143,7 @@ module.exports = async function handler(req, res) {
       moduleId,
       salt: salt.toString('base64'),
       iv: iv.toString('base64'),
-      authTag,
-      payload: encrypted,
+      payload: finalPayload,
       checksum
     });
 
