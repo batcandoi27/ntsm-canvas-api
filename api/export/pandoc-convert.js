@@ -250,32 +250,28 @@ module.exports = async function handler(req, res) {
     // 3.2 PHẪU THUẬT XML: Ép viền bảng đậm (sz="18" ~ 2.25pt) và Căn giữa
     console.log('[Pandoc-Convert] Injecting thick borders and centering to XML...');
     
-    // Ép độ dày viền cho tất cả các loại viền (top, left, bottom, right, insideH, insideV)
-    docXml = docXml.replace(/<w:tblBorders>(.*?)<\/w:tblBorders>/gs, (match, content) => {
-      // Thay thế sz="..." thành sz="18" cho tất cả các tag viền bên trong
-      let fixedContent = content.replace(/(<w:(?:top|left|bottom|right|insideH|insideV)[^>]+?w:sz=")\d+(")/g, '$118$2');
-      // Nếu tag chưa có sz, chèn thêm sz="18"
-      fixedContent = fixedContent.replace(/(<w:(?:top|left|bottom|right|insideH|insideV))((?:(?![ ]w:sz=)[^>])+)(\/>)/g, '$1 w:sz="18" $2$3');
-      return `<w:tblBorders>${fixedContent}</w:tblBorders>`;
-    });
-
-    // Ép căn giữa cho bảng (Table Justification)
+    // Ép căn giữa cho bảng và chèn cứng Border đậm
+    const thickBorders = `<w:tblBorders><w:top w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="18" w:space="0" w:color="auto"/></w:tblBorders>`;
+    
     docXml = docXml.replace(/<w:tblPr>(.*?)<\/w:tblPr>/gs, (match, content) => {
-      if (!content.includes('<w:jc')) {
-        return `<w:tblPr>${content}<w:jc w:val="center"/></w:tblPr>`;
-      }
-      return match.replace(/<w:jc w:val="[^"]+"/, '<w:jc w:val="center"');
+      let newContent = content.replace(/<w:tblBorders>.*?<\/w:tblBorders>/gs, ''); // Xóa tblBorders cũ
+      newContent = newContent.replace(/<w:jc[^>]+>/gs, ''); // Xóa jc cũ
+      return `<w:tblPr>${newContent}<w:jc w:val="center"/>${thickBorders}</w:tblPr>`;
     });
 
     // Ép căn giữa cho nội dung trong ô (Cell Paragraph Justification)
-    // Tìm các đoạn văn <w:p> nằm trong ô <w:tc>
     docXml = docXml.replace(/<w:tc>(.*?)<\/w:tc>/gs, (match, cellContent) => {
-      return `<w:tc>${cellContent.replace(/<w:pPr>(.*?)<\/w:pPr>/gs, (m, pPrContent) => {
-        if (!pPrContent.includes('<w:jc')) {
-          return `<w:pPr>${pPrContent}<w:jc w:val="center"/></w:pPr>`;
-        }
-        return m.replace(/<w:jc w:val="[^"]+"/, '<w:jc w:val="center"');
-      })}</w:tc>`;
+      // 1. Căn ngang (Paragraph jc)
+      let updatedCell = cellContent.replace(/<w:pPr>(.*?)<\/w:pPr>/gs, (m, pPrContent) => {
+        let newPpr = pPrContent.replace(/<w:jc[^>]+>/gs, '');
+        return `<w:pPr>${newPpr}<w:jc w:val="center"/></w:pPr>`;
+      });
+      // 2. Căn dọc (Cell vAlign)
+      updatedCell = updatedCell.replace(/<w:tcPr>(.*?)<\/w:tcPr>/gs, (m, tcPrContent) => {
+        let newTcPr = tcPrContent.replace(/<w:vAlign[^>]+>/gs, '');
+        return `<w:tcPr>${newTcPr}<w:vAlign w:val="center"/></w:tcPr>`;
+      });
+      return `<w:tc>${updatedCell}</w:tc>`;
     });
 
     zip.file(docXmlPath, docXml);
