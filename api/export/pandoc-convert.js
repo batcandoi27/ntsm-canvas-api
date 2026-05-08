@@ -208,16 +208,22 @@ module.exports = async function handler(req, res) {
     // Ghi file HTML tạm
     writeFileSync(inputPath, styledHtml);
 
-    console.log('[Pandoc-Convert] Executing Pandoc with LaTeX Math support...');
-    
-    // KEY: html+tex_math_dollars hỗ trợ $...$ → Equation trong Word
-    execFileSync(pandocPath, [
+    // KEY: Dùng file reference.docx để ép Font và Style
+    const referencePath = path.resolve('reference.docx');
+    const pandocArgs = [
         inputPath,
         '-f', 'html+tex_math_dollars+tex_math_single_backslash', 
         '-t', 'docx',
         '--standalone',
         '-o', outputPath
-    ]);
+    ];
+
+    if (fs.existsSync(referencePath)) {
+      console.log('[Pandoc-Convert] Using reference-doc for styling...');
+      pandocArgs.push('--reference-doc', referencePath);
+    }
+
+    execFileSync(pandocPath, pandocArgs);
 
     console.log('[Pandoc-Convert] Success.');
 
