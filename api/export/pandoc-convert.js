@@ -186,20 +186,6 @@ module.exports = async function handler(req, res) {
     const safeFilename = sanitizeFilename(filename);
     const { disableMath } = req.body || {};
 
-    // 1. LÀM SẠCH "RÁC" MARKDOWN/HTML TRƯỚC KHI CONVERT
-    let cleanHtml = html;
-    // Xóa các paragraph chỉ chứa khoảng trắng hoặc &nbsp;
-    cleanHtml = cleanHtml.replace(/<p>\s*(&nbsp;)*\s*<\/p>/gi, '');
-    // Xóa các dòng trống thừa (3 dòng thành 1)
-    cleanHtml = cleanHtml.replace(/(\r\n|\n|\r){3,}/g, '\n\n');
-    
-    // 2. MẸO ĐÁNH TRÁO DẤU $ CHO MATHTYPE
-    const MATH_MARKER = 'NTSM_MATH_DOLLAR';
-    if (disableMath) {
-      // Thay $ thành chuỗi marker để Pandoc không nhận ra Math
-      cleanHtml = cleanHtml.replace(/\$/g, MATH_MARKER);
-    }
-
     // Cấu hình CSS để Pandoc nhận diện: Font Times New Roman + Bảng có viền đơn black
     const styledHtml = `
     <!DOCTYPE html>
@@ -215,12 +201,12 @@ module.exports = async function handler(req, res) {
       </style>
     </head>
     <body>
-      ${cleanHtml}
+      ${html}
     </body>
     </html>
     `;
 
-    // Ghi file HTML tạm
+    // Ghi file HTML tạm (Dữ liệu đã được Client làm sạch và đánh tráo dấu $)
     writeFileSync(inputPath, styledHtml);
 
     // KEY: Dùng file reference.docx để ép Font và Style
@@ -236,7 +222,7 @@ module.exports = async function handler(req, res) {
     ];
 
     if (fs.existsSync(referencePath)) {
-      pandocArgs.push('--reference-doc', referencePath);
+        pandocArgs.push('--reference-doc', referencePath);
     }
 
     execFileSync(pandocPath, pandocArgs);
@@ -251,8 +237,9 @@ module.exports = async function handler(req, res) {
     let docXml = await zip.file(docXmlPath).async('string');
 
     if (disableMath) {
+      const MATH_MARKER = 'NTSM_DOLLAR_MARKER';
       console.log('[Pandoc-Convert] Swapping markers back to $ for MathType...');
-      // Thay ngược lại marker thành dấu $
+      // Thay ngược lại marker thành dấu $ trong file Word cuối cùng
       docXml = docXml.replace(new RegExp(MATH_MARKER, 'g'), '$');
     }
 
