@@ -207,17 +207,22 @@ module.exports = async function handler(req, res) {
     </html>
     `;
 
+    // Xử lý chế độ disableMath (MathType Pandoc)
+    const { disableMath } = req.body || {};
+    
+    let finalHtml = styledHtml;
+    if (disableMath) {
+      // Escape dấu $ để Pandoc không nhận ra là công thức
+      finalHtml = finalHtml.replace(/\$/g, '\\$');
+    }
+
     // Ghi file HTML tạm
-    writeFileSync(inputPath, styledHtml);
+    writeFileSync(inputPath, finalHtml);
 
     // KEY: Dùng file reference.docx để ép Font và Style
     const referencePath = path.resolve('reference.docx');
     
-    // Xử lý chế độ disableMath (MathType Pandoc)
-    const { disableMath } = req.body || {};
-    const fromFormat = disableMath 
-      ? 'html-tex_math_dollars' // Tắt parse math
-      : 'html+tex_math_dollars+tex_math_single_backslash';
+    const fromFormat = 'html+tex_math_dollars+tex_math_single_backslash';
 
     const pandocArgs = [
         inputPath,
@@ -234,17 +239,35 @@ module.exports = async function handler(req, res) {
 
     execFileSync(pandocPath, pandocArgs);
 
+    // ============================================================
+    // BƯỚC 3: HẬU KỲ XML - XÓA DÒNG TRỐNG THỪA
+    // ============================================================
+    console.log('[Pandoc-Convert] Post-processing XML to remove empty lines...');
+    const JSZip = require('jszip');
+    const docxData = readFileSync(outputPath);
+    const zip = await JSZip.loadAsync(docxData);
+    const docXmlPath = 'word/document.xml';
+    let docXml = await zip.file(docXmlPath).async('string');
+
+    // Regex xóa các thẻ paragraph trống mà Pandoc hay tạo ra
+    // Thường là <w:p><w:pPr>...</w:pPr><w:r><w:t/></w:r></w:p> hoặc <w:p/>
+    // Chúng ta xóa các paragraph chỉ chứa text trống hoặc không chứa text
+    docXml = docXml.replace(/<w:p(?: [^>]*)?>(?:<w:pPr>.*?<\/w:pPr>)?(?:<w:r(?: [^>]*)?><w:t\/>\s*<\/w:r>)?<\/w:p>/g, '');
+    // Xóa thêm các khoảng trắng dư thừa giữa các tag
+    docXml = docXml.replace(/<\/w:p>\s*<w:p>/g, '</w:p><w:p>');
+
+    zip.file(docXmlPath, docXml);
+    const finalBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
     console.log('[Pandoc-Convert] Success.');
 
     // ============================================================
-    // BƯỚC 3: Trả file DOCX
+    // BƯỚC 4: Trả file DOCX đã qua xử lý
     // ============================================================
-    const fileBuffer = readFileSync(outputPath);
-
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
     
-    return res.send(fileBuffer);
+    return res.send(finalBuffer);
 
   } catch (error) {
     console.error('[Pandoc-Convert] Fatal Error:', error);
