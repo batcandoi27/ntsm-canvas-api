@@ -59,7 +59,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { licenseKey, deviceId, markdownContent, images, htmlContent } = req.body;
+    const { licenseKey, deviceId, productId, markdownContent, images, htmlContent } = req.body;
 
     if (!licenseKey || !deviceId || (!markdownContent && !htmlContent)) {
       return res.status(400).json({ success: false, message: 'Yêu cầu không hợp lệ: Thiếu nội dung hoặc mã bản quyền.' });
@@ -73,8 +73,28 @@ module.exports = async function handler(req, res) {
       return res.status(403).json({ success: false, message: 'License invalid or not active' });
     }
 
-    const fingerprints = licenseDoc.data().fingerprints || [];
-    if (!fingerprints.includes(deviceId)) {
+    const data = licenseDoc.data();
+    
+    // Check product compatibility
+    if (data.allowedProducts && Array.isArray(data.allowedProducts)) {
+      if (!data.allowedProducts.includes(productId)) {
+        return res.status(403).json({ success: false, message: 'Mã kích hoạt không đúng sản phẩm.' });
+      }
+    } else if (productId && data.productId && data.productId !== productId) {
+      return res.status(403).json({ success: false, message: 'Mã kích hoạt không đúng sản phẩm.' });
+    }
+
+    const fpKey = productId ? `fingerprints_${productId}` : 'fingerprints';
+    let productFingerprints = data[fpKey] || [];
+    
+    // Fallback legacy fingerprints if new array is empty
+    if (productFingerprints.length === 0) {
+      const legacyFp = data.fingerprints || [];
+      if (legacyFp.length > 0) productFingerprints = legacyFp;
+      else if (data.deviceId) productFingerprints = [data.deviceId];
+    }
+
+    if (!productFingerprints.includes(deviceId)) {
       return res.status(403).json({ success: false, message: 'Thiết bị không hợp lệ hoặc chưa được cấp phép.' });
     }
 

@@ -27,6 +27,9 @@ module.exports = async function handler(req, res) {
     if (!products.includes('chuyenword')) {
       products.push('chuyenword');
     }
+    if (!products.includes('thaycoai_vsto')) {
+      products.push('thaycoai_vsto');
+    }
 
     return res.status(200).json({ success: true, products });
   } catch (error) {

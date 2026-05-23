@@ -59,6 +59,7 @@ module.exports = async function handler(req, res) {
         
         const payload = {
           productId,
+          allowedProducts: [productId], // Giới hạn key mới CHỈ dùng được cho product này
           status: 'inactive',
           loginCount: 0,
           fingerprints: [],

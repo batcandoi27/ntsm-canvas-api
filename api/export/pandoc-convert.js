@@ -161,20 +161,29 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const fingerprints = data.fingerprints || [];
-    if (data.deviceId && fingerprints.length === 0) {
-      fingerprints.push(data.deviceId);
+    // Check product compatibility
+    if (data.allowedProducts && Array.isArray(data.allowedProducts)) {
+      if (!data.allowedProducts.includes(productId)) {
+        return res.status(403).json({ success: false, message: 'Mã kích hoạt không đúng sản phẩm.' });
+      }
+    } else if (productId && data.productId && data.productId !== productId) {
+      return res.status(403).json({ success: false, message: 'Mã kích hoạt không đúng sản phẩm.' });
     }
+
+    const fpKey = productId ? `fingerprints_${productId}` : 'fingerprints';
+    let productFingerprints = data[fpKey] || [];
     
-    if (!fingerprints.includes(deviceId)) {
+    if (productFingerprints.length === 0) {
+      const legacyFp = data.fingerprints || [];
+      if (legacyFp.length > 0) productFingerprints = legacyFp;
+      else if (data.deviceId) productFingerprints = [data.deviceId];
+    }
+
+    if (!productFingerprints.includes(deviceId)) {
       return res.status(403).json({ 
         success: false, 
         message: 'Thiết bị không hợp lệ hoặc chưa được cấp phép.' 
       });
-    }
-
-    if (productId && data.productId && data.productId !== productId) {
-      return res.status(403).json({ success: false, message: 'Mã kích hoạt không đúng sản phẩm.' });
     }
 
     // ============================================================
