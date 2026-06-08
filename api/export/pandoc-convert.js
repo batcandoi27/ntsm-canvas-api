@@ -256,7 +256,74 @@ module.exports = async function handler(req, res) {
       docXml = docXml.replace(new RegExp(MATH_MARKER, 'g'), '$');
     }
 
-    // 3.2 PHẪU THUẬT XML: Ép viền bảng đậm (sz="18" ~ 2.25pt) và Căn giữa
+    // 3.2 PHẪU THUẬT XML: Xử lý ZZZFLOATRIGHTZZZ và ZZZFLOATLEFTZZZ
+    console.log('[Pandoc-Convert] Injecting anchors for floats...');
+    docXml = docXml.replace(/<w:p\b[^>]*>(.*?)<\/w:p>/gs, (match, pContent) => {
+        const markerMatch = match.match(/(ZZZFLOAT(?:RIGHT|LEFT)ZZZ)(?:_W(\d+))?/);
+        if (markerMatch) {
+            const markerBase = markerMatch[1];
+            const widthPct = markerMatch[2] ? parseInt(markerMatch[2], 10) : 0;
+            const isLeft = markerBase.includes("LEFT");
+            const alignStr = isLeft ? "left" : "right";
+            
+            let current_y_offset = 0;
+            
+            let newMatch = match.replace(/<w:drawing>(.*?)<\/w:drawing>/gs, (drawingMatch, drawingContent) => {
+                const inlineMatch = drawingContent.match(/<wp:inline[^>]*>(.*?)<\/wp:inline>/s);
+                if (!inlineMatch) return drawingMatch;
+                
+                const inlineContent = inlineMatch[1];
+                const extentMatch = inlineContent.match(/<wp:extent\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
+                if (!extentMatch) return drawingMatch;
+                
+                let orig_cx = parseInt(extentMatch[1], 10);
+                let orig_cy = parseInt(extentMatch[2], 10);
+                let cx = orig_cx;
+                let cy = orig_cy;
+                
+                let updatedInlineContent = inlineContent;
+                
+                if (widthPct > 0) {
+                    cx = Math.floor((widthPct / 100.0) * 5943600);
+                    cy = orig_cx > 0 ? Math.floor(orig_cy * (cx / orig_cx)) : orig_cy;
+                    
+                    updatedInlineContent = updatedInlineContent.replace(
+                        /<wp:extent\s+cx="\d+"\s+cy="\d+"\s*\/>/, 
+                        `<wp:extent cx="${cx}" cy="${cy}"/>`
+                    );
+                    
+                    updatedInlineContent = updatedInlineContent.replace(
+                        /<a:ext\s+cx="\d+"\s+cy="\d+"\s*\/>/, 
+                        `<a:ext cx="${cx}" cy="${cy}"/>`
+                    );
+                }
+                
+                const extentTagMatch = updatedInlineContent.match(/<wp:extent[^>]*\/>/);
+                const effectExtentMatch = updatedInlineContent.match(/<wp:effectExtent[^>]*\/>/);
+                const docPrMatch = updatedInlineContent.match(/<wp:docPr[^>]*\/>/);
+                const cNvGraphicFramePrMatch = updatedInlineContent.match(/<wp:cNvGraphicFramePr>.*?<\/wp:cNvGraphicFramePr>/s) || updatedInlineContent.match(/<wp:cNvGraphicFramePr[^>]*\/>/s);
+                const graphicMatch = updatedInlineContent.match(/<a:graphic[^>]*>.*?<\/a:graphic>/s);
+                
+                const extentTag = extentTagMatch ? extentTagMatch[0] : '';
+                const effectExtentTag = effectExtentMatch ? effectExtentMatch[0] : '';
+                const docPrTag = docPrMatch ? docPrMatch[0] : '';
+                const cNvGraphicFramePrTag = cNvGraphicFramePrMatch ? cNvGraphicFramePrMatch[0] : '';
+                const graphicTag = graphicMatch ? graphicMatch[0] : '';
+                
+                const anchorXml = `<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="251658240" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:align>${alignStr}</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>${current_y_offset}</wp:posOffset></wp:positionV>${extentTag}${effectExtentTag}<wp:wrapSquare wrapText="bothSides"/>${docPrTag}${cNvGraphicFramePrTag}${graphicTag}</wp:anchor>`;
+                
+                current_y_offset += cy + 127000;
+                
+                return `<w:drawing>${anchorXml}</w:drawing>`;
+            });
+            
+            newMatch = newMatch.replace(/<w:t[^>]*>.*?<\/w:t>/gs, '');
+            return newMatch;
+        }
+        return match;
+    });
+
+    // 3.3 PHẪU THUẬT XML: Ép viền bảng đậm (sz="18" ~ 2.25pt) và Căn giữa
     console.log('[Pandoc-Convert] Injecting thick borders and centering to XML...');
     
     // Ép căn giữa cho bảng và chèn cứng Border đậm
