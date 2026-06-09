@@ -323,16 +323,45 @@ module.exports = async function handler(req, res) {
         return match;
     });
 
-    // 3.3 PHẪU THUẬT XML: Ép viền bảng đậm (sz="18" ~ 2.25pt) và Căn giữa
-    console.log('[Pandoc-Convert] Injecting thick borders and centering to XML...');
+    // 3.3 PHẪU THUẬT XML: Xử lý Border bảng (Có viền cho bảng thường, Không viền cho bảng HEADER/LAYOUT)
+    console.log('[Pandoc-Convert] Formatting tables...');
     
-    // Ép căn giữa cho bảng và chèn cứng Border đậm
-    const thickBorders = `<w:tblBorders><w:top w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="18" w:space="0" w:color="auto"/></w:tblBorders>`;
-    
-    docXml = docXml.replace(/<w:tblPr>(.*?)<\/w:tblPr>/gs, (match, content) => {
-      let newContent = content.replace(/<w:tblBorders>.*?<\/w:tblBorders>/gs, ''); // Xóa tblBorders cũ
-      newContent = newContent.replace(/<w:jc[^>]+>/gs, ''); // Xóa jc cũ
-      return `<w:tblPr>${newContent}<w:jc w:val="center"/>${thickBorders}</w:tblPr>`;
+    docXml = docXml.replace(/<w:tbl\b[^>]*>.*?<\/w:tbl>/gs, (tblMatch) => {
+      let isHeaderOrLayout = false;
+      let newTblMatch = tblMatch;
+      
+      if (tblMatch.includes('ZZZHEADERZZZ')) {
+        isHeaderOrLayout = true;
+        newTblMatch = newTblMatch.replace(/<w:t[^>]*>.*?<\/w:t>/gs, (tMatch) => {
+           if(tMatch.includes('ZZZHEADERZZZ')) return tMatch.replace('ZZZHEADERZZZ', '');
+           return tMatch;
+        });
+      }
+      
+      if (tblMatch.includes('ZZZLAYOUTZZZ')) {
+        isHeaderOrLayout = true;
+        newTblMatch = newTblMatch.replace(/<w:t[^>]*>.*?<\/w:t>/gs, (tMatch) => {
+           if(tMatch.includes('ZZZLAYOUTZZZ')) return tMatch.replace('ZZZLAYOUTZZZ', '');
+           return tMatch;
+        });
+      }
+
+      if (isHeaderOrLayout) {
+        const noBorders = `<w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders>`;
+        newTblMatch = newTblMatch.replace(/<w:tblPr>(.*?)<\/w:tblPr>/s, (m, content) => {
+          let c = content.replace(/<w:tblBorders>.*?<\/w:tblBorders>/gs, '');
+          c = c.replace(/<w:jc[^>]+>/gs, '');
+          return `<w:tblPr>${c}<w:jc w:val="center"/>${noBorders}</w:tblPr>`;
+        });
+      } else {
+        const thickBorders = `<w:tblBorders><w:top w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="18" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="18" w:space="0" w:color="auto"/></w:tblBorders>`;
+        newTblMatch = newTblMatch.replace(/<w:tblPr>(.*?)<\/w:tblPr>/s, (m, content) => {
+          let c = content.replace(/<w:tblBorders>.*?<\/w:tblBorders>/gs, '');
+          c = c.replace(/<w:jc[^>]+>/gs, '');
+          return `<w:tblPr>${c}<w:jc w:val="center"/>${thickBorders}</w:tblPr>`;
+        });
+      }
+      return newTblMatch;
     });
 
     // Ép căn giữa cho nội dung trong ô (Cell Paragraph Justification)
